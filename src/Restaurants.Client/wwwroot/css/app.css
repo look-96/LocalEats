@@ -162,6 +162,25 @@ h1 em, h2 em { color: var(--tomato); font-weight: 500; }
 .auth-note { background: #f0f0e9; line-height: 1.55; padding: 10px 12px; }
 .sr-only { clip: rect(0, 0, 0, 0); clip-path: inset(50%); height: 1px; overflow: hidden; position: absolute; white-space: nowrap; width: 1px; }
 
+#blazor-error-ui {
+    background: #fff4ce;
+    bottom: 0;
+    box-shadow: 0 -1px 4px rgba(20, 35, 28, 0.18);
+    display: none;
+    left: 0;
+    padding: 0.75rem 3rem 0.75rem 1.25rem;
+    position: fixed;
+    width: 100%;
+    z-index: 1000;
+}
+
+#blazor-error-ui .dismiss {
+    cursor: pointer;
+    position: absolute;
+    right: 0.75rem;
+    top: 0.5rem;
+}
+
 @media (max-width: 860px) {
     .restaurant-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .detail-hero { grid-template-columns: 1fr; }
