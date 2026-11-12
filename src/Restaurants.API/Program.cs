@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.AspNetCore.HttpOverrides;
 using Restaurants.API.Extensions;
 using Restaurants.API.Middlewares;
 using Restaurants.API.Security;
@@ -13,6 +14,18 @@ try
 {
     var builder = WebApplication.CreateBuilder(args);
 
+    var isCloudRun = !string.IsNullOrWhiteSpace(builder.Configuration["K_SERVICE"]);
+    if (isCloudRun)
+    {
+        builder.Services.Configure<ForwardedHeadersOptions>(options =>
+        {
+            options.ForwardedHeaders = ForwardedHeaders.XForwardedProto;
+            options.KnownIPNetworks.Clear();
+            options.KnownProxies.Clear();
+            options.ForwardLimit = 1;
+        });
+    }
+
     // Add services to the container.
 
     builder.AddPresentation();
@@ -22,6 +35,9 @@ try
 
 
     var app = builder.Build();
+
+    if (isCloudRun)
+        app.UseForwardedHeaders();
 
     var scope = app.Services.CreateScope();
     var initializer = scope.ServiceProvider.GetRequiredService<IStartupDataInitializer>();
