@@ -1,0 +1,23 @@
+<CascadingAuthenticationState>
+    <Router AppAssembly="@typeof(App).Assembly">
+        <Found Context="routeData">
+            <AuthorizeRouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)">
+                <NotAuthorized>
+                    <LayoutView Layout="@typeof(MainLayout)">
+                        <section class="notice" role="status">
+                            <p>Sign in to open this page.</p>
+                            <NavLink href="/login">Go to sign in</NavLink>
+                        </section>
+                    </LayoutView>
+                </NotAuthorized>
+            </AuthorizeRouteView>
+            <FocusOnNavigate RouteData="@routeData" Selector="h1" />
+        </Found>
+        <NotFound>
+            <PageTitle>Page not found</PageTitle>
+            <LayoutView Layout="@typeof(MainLayout)">
+                <section class="notice" role="alert">That page could not be found.</section>
+            </LayoutView>
+        </NotFound>
+    </Router>
+</CascadingAuthenticationState>

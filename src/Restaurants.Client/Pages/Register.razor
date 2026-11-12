@@ -1,0 +1,71 @@
+@page "/register"
+@inject AuthService AuthService
+@inject NavigationManager Navigation
+
+<PageTitle>Create account | Table &amp; Thyme</PageTitle>
+
+<section class="auth-page">
+    <div class="auth-art auth-art-register"><span class="eyebrow">Good things start here</span><p>Make room<br />for more.</p><span class="auth-art-mark" aria-hidden="true">✳</span></div>
+    <div class="auth-card">
+        <p class="eyebrow eyebrow-olive">Join the community</p>
+        <h1>Create <em>account.</em></h1>
+        <p class="form-intro">Set up an account to manage your restaurant.</p>
+        <EditForm Model="form" OnValidSubmit="SubmitAsync" class="editor-form">
+            <DataAnnotationsValidator />
+            <ValidationSummary />
+            <label>Email <InputText @bind-Value="form.Email" type="email" autocomplete="email" /></label>
+            <label>Password <InputText @bind-Value="form.Password" type="password" autocomplete="new-password" /></label>
+            <label>Confirm password <InputText @bind-Value="form.ConfirmPassword" type="password" autocomplete="new-password" /></label>
+            @if (!string.IsNullOrWhiteSpace(errorMessage)) { <p class="form-message error-text" role="alert">@errorMessage</p> }
+            <button class="button button-dark button-wide" disabled="@isSubmitting">@(isSubmitting ? "Creating…" : "Create account")</button>
+        </EditForm>
+        <p class="auth-switch">Already registered? <NavLink href="login">Sign in</NavLink></p>
+        <p class="auth-note">New accounts can browse. An administrator must grant the Owner role before a listing can be created.</p>
+    </div>
+</section>
+
+@code {
+    private readonly RegisterRequest request = new();
+    private readonly RegistrationForm form = new();
+    private bool isSubmitting;
+    private string? errorMessage;
+
+    private async Task SubmitAsync()
+    {
+        errorMessage = null;
+        if (form.Password != form.ConfirmPassword)
+        {
+            errorMessage = "The passwords do not match.";
+            return;
+        }
+
+        isSubmitting = true;
+        request.Email = form.Email;
+        request.Password = form.Password;
+        try
+        {
+            await AuthService.RegisterAsync(request);
+            Navigation.NavigateTo("/login?registered=true");
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or HttpRequestException)
+        {
+            errorMessage = exception is HttpRequestException ? "The registration service could not be reached." : exception.Message;
+        }
+        finally
+        {
+            isSubmitting = false;
+        }
+    }
+
+    private sealed class RegistrationForm
+    {
+        [Required, EmailAddress]
+        public string Email { get; set; } = string.Empty;
+
+        [Required, MinLength(8)]
+        public string Password { get; set; } = string.Empty;
+
+        [Required]
+        public string ConfirmPassword { get; set; } = string.Empty;
+    }
+}

@@ -1,0 +1,52 @@
+@page "/login"
+@inject AuthService AuthService
+@inject NavigationManager Navigation
+
+<PageTitle>Sign in | Table &amp; Thyme</PageTitle>
+
+<section class="auth-page">
+    <div class="auth-art"><span class="eyebrow">Welcome back</span><p>Pull up<br />a chair.</p><span class="auth-art-mark" aria-hidden="true">✳</span></div>
+    <div class="auth-card">
+        <p class="eyebrow eyebrow-olive">Your neighbourhood table</p>
+        <h1>Sign <em>in.</em></h1>
+        <p class="form-intro">Sign in to manage your restaurant listings.</p>
+        @if (Navigation.Uri.Contains("registered=true", StringComparison.OrdinalIgnoreCase))
+        {
+            <div class="notice" role="status">Account created. Sign in to continue.</div>
+        }
+        <EditForm Model="request" OnValidSubmit="SubmitAsync" class="editor-form">
+            <DataAnnotationsValidator />
+            <ValidationSummary />
+            <label>Email <InputText @bind-Value="request.Email" type="email" autocomplete="username" /></label>
+            <label>Password <InputText @bind-Value="request.Password" type="password" autocomplete="current-password" /></label>
+            @if (!string.IsNullOrWhiteSpace(errorMessage)) { <p class="form-message error-text" role="alert">@errorMessage</p> }
+            <button class="button button-dark button-wide" disabled="@isSubmitting">@(isSubmitting ? "Signing in…" : "Sign in")</button>
+        </EditForm>
+        <p class="auth-switch">New here? <NavLink href="register">Create an account</NavLink></p>
+    </div>
+</section>
+
+@code {
+    private readonly LoginRequest request = new();
+    private bool isSubmitting;
+    private string? errorMessage;
+
+    private async Task SubmitAsync()
+    {
+        isSubmitting = true;
+        errorMessage = null;
+        try
+        {
+            await AuthService.LoginAsync(request);
+            Navigation.NavigateTo("/");
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or HttpRequestException)
+        {
+            errorMessage = exception is HttpRequestException ? "The sign-in service could not be reached." : exception.Message;
+        }
+        finally
+        {
+            isSubmitting = false;
+        }
+    }
+}

@@ -1,0 +1,23 @@
+@inject AuthService AuthService
+@inject NavigationManager Navigation
+
+<div class="auth-status">
+    <AuthorizeView>
+        <Authorized>
+            <NavLink class="quiet-link" href="restaurants/new">Add a restaurant</NavLink>
+            <button class="button button-small button-outline" @onclick="SignOutAsync">Sign out</button>
+        </Authorized>
+        <NotAuthorized>
+            <NavLink class="quiet-link" href="register">Create account</NavLink>
+            <NavLink class="button button-small button-dark" href="login">Sign in</NavLink>
+        </NotAuthorized>
+    </AuthorizeView>
+</div>
+
+@code {
+    private async Task SignOutAsync()
+    {
+        await AuthService.LogoutAsync();
+        Navigation.NavigateTo("/");
+    }
+}

@@ -1,0 +1,70 @@
+@inject DishService DishService
+
+<section class="add-dish-panel" aria-labelledby="edit-dish-heading">
+    <p class="eyebrow eyebrow-olive">Keep the menu current</p>
+    <h2 id="edit-dish-heading">Edit dish</h2>
+    <EditForm Model="request" OnValidSubmit="SaveAsync" class="editor-form compact-form">
+        <DataAnnotationsValidator />
+        <ValidationSummary />
+        <label>Dish name <InputText @bind-Value="request.Name" /></label>
+        <label>Description <InputTextArea @bind-Value="request.Description" rows="3" /></label>
+        <div class="form-grid">
+            <label>Price <InputNumber @bind-Value="request.Price" step="0.01" /></label>
+            <label>Calories <InputNumber @bind-Value="request.KiloCalories" /></label>
+        </div>
+        @if (!string.IsNullOrWhiteSpace(message))
+        {
+            <p class="form-message error-text" role="alert">@message</p>
+        }
+        <div class="form-actions">
+            <button type="button" class="button button-outline" @onclick="OnCancel">Cancel</button>
+            <button class="button button-dark" disabled="@isSaving">@(isSaving ? "Saving…" : "Save dish")</button>
+        </div>
+    </EditForm>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public int RestaurantId { get; set; }
+    [Parameter, EditorRequired] public Dish Dish { get; set; } = default!;
+    [Parameter] public EventCallback OnSaved { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    private readonly DishCreateRequest request = new();
+    private int loadedDishId;
+    private bool isSaving;
+    private string? message;
+
+    protected override void OnParametersSet()
+    {
+        if (loadedDishId == Dish.Id)
+            return;
+
+        loadedDishId = Dish.Id;
+        request.Name = Dish.Name;
+        request.Description = Dish.Description;
+        request.Price = Dish.Price;
+        request.KiloCalories = Dish.KiloCalories;
+        message = null;
+    }
+
+    private async Task SaveAsync()
+    {
+        isSaving = true;
+        message = null;
+        try
+        {
+            await DishService.UpdateAsync(RestaurantId, Dish.Id, request);
+            await OnSaved.InvokeAsync();
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or HttpRequestException)
+        {
+            message = exception is HttpRequestException
+                ? "The menu service could not be reached."
+                : exception.Message;
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+}

@@ -1,0 +1,15 @@
+**/bin/
+**/obj/
+**/artifacts/
+.git/
+.github/
+.dotnet-cli/
+.local-appdata/
+.restore-temp/
+publish/
+*.log
+**/App_Data/
+**/appsettings.Development.json
+**/secrets.json
+**/*.db
+**/*.sqlite*

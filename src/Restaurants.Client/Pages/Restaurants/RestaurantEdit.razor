@@ -1,0 +1,82 @@
+@page "/restaurants/{Id:int}/edit"
+@inject RestaurantService RestaurantService
+@inject NavigationManager Navigation
+
+<PageTitle>Edit restaurant | Table &amp; Thyme</PageTitle>
+
+<section class="form-page">
+    <p class="eyebrow eyebrow-olive">Keep your details current</p>
+    <h1>Edit <em>listing.</em></h1>
+    @if (isLoading)
+    {
+        <div class="loading-state"><span class="spinner"></span>Loading listing…</div>
+    }
+    else if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="notice notice-error" role="alert">@errorMessage</div>
+        <p class="form-intro">Only the restaurant owner can edit this listing. <NavLink href="/login">Sign in</NavLink> with the owner account.</p>
+    }
+    else
+    {
+        <EditForm Model="request" OnValidSubmit="SaveAsync" class="editor-form">
+            <DataAnnotationsValidator />
+            <ValidationSummary />
+            <label>Name <InputText @bind-Value="request.Name" /></label>
+            <label>Description <InputTextArea @bind-Value="request.Description" rows="4" /></label>
+            <label class="check-row"><InputCheckbox @bind-Value="request.HasDelivery" /> Delivery available</label>
+            @if (!string.IsNullOrWhiteSpace(saveError)) { <p class="form-message error-text" role="alert">@saveError</p> }
+            <div class="form-actions"><NavLink class="quiet-link" href="@($"/restaurants/{Id}")">Cancel</NavLink><button class="button button-dark" disabled="@isSaving">@(isSaving ? "Saving…" : "Save changes")</button></div>
+        </EditForm>
+    }
+</section>
+
+@code {
+    [Parameter] public int Id { get; set; }
+    private readonly RestaurantUpdateRequest request = new();
+    private bool isLoading = true;
+    private bool isSaving;
+    private string? errorMessage;
+    private string? saveError;
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        isLoading = true;
+        errorMessage = null;
+        try
+        {
+            var restaurant = await RestaurantService.GetByIdAsync(Id);
+            request.Name = restaurant.Name;
+            request.Description = restaurant.Description;
+            request.HasDelivery = restaurant.HasDelivery;
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or HttpRequestException)
+        {
+            errorMessage = exception is HttpRequestException ? "The restaurant service could not be reached." : exception.Message;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        isSaving = true;
+        saveError = null;
+        try
+        {
+            await RestaurantService.UpdateAsync(Id, request);
+            Navigation.NavigateTo($"/restaurants/{Id}");
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or HttpRequestException)
+        {
+            saveError = exception is HttpRequestException ? "The restaurant service could not be reached." : exception.Message;
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+}

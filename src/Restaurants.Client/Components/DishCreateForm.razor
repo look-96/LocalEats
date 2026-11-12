@@ -1,0 +1,53 @@
+@inject DishService DishService
+
+<section class="add-dish-panel">
+    <p class="eyebrow eyebrow-olive">For the kitchen</p>
+    <h2>Add a dish</h2>
+    <EditForm Model="request" OnValidSubmit="SaveAsync" class="editor-form compact-form">
+        <DataAnnotationsValidator />
+        <ValidationSummary />
+        <label>Dish name <InputText @bind-Value="request.Name" /></label>
+        <label>Description <InputTextArea @bind-Value="request.Description" rows="3" /></label>
+        <div class="form-grid">
+            <label>Price <InputNumber @bind-Value="request.Price" step="0.01" /></label>
+            <label>Calories <InputNumber @bind-Value="request.KiloCalories" /></label>
+        </div>
+        @if (!string.IsNullOrWhiteSpace(message)) { <p class="form-message @(failed ? "error-text" : "success-text")" role="status">@message</p> }
+        <button class="button button-dark" disabled="@isSaving">@(isSaving ? "Adding…" : "Add dish")</button>
+    </EditForm>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public int RestaurantId { get; set; }
+    [Parameter] public EventCallback OnCreated { get; set; }
+    private readonly DishCreateRequest request = new();
+    private bool isSaving;
+    private bool failed;
+    private string? message;
+
+    private async Task SaveAsync()
+    {
+        isSaving = true;
+        message = null;
+        try
+        {
+            await DishService.CreateAsync(RestaurantId, request);
+            request.Name = string.Empty;
+            request.Description = string.Empty;
+            request.Price = 0;
+            request.KiloCalories = null;
+            message = "Dish added.";
+            failed = false;
+            await OnCreated.InvokeAsync();
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or HttpRequestException)
+        {
+            message = exception is HttpRequestException ? "The menu service could not be reached." : exception.Message;
+            failed = true;
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+}

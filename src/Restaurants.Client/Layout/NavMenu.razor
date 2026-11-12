@@ -1,0 +1,12 @@
+<nav class="main-nav" aria-label="Main navigation">
+    <NavLink class="brand" href="" Match="NavLinkMatch.All">
+        <span class="brand-mark" aria-hidden="true">T</span>
+        <span>table<span class="brand-amp">&amp;</span>thyme</span>
+    </NavLink>
+    <NavLink class="nav-link" href="" Match="NavLinkMatch.All">Explore</NavLink>
+    <AuthorizeView>
+        <Authorized>
+            <NavLink class="nav-link" href="/owner/restaurants">My restaurants</NavLink>
+        </Authorized>
+    </AuthorizeView>
+</nav>

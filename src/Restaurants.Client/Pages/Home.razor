@@ -1,0 +1,169 @@
+@page "/"
+@inject RestaurantService RestaurantService
+
+<PageTitle>Explore restaurants | Table &amp; Thyme</PageTitle>
+
+<section class="hero">
+    <div class="hero-copy">
+        <p class="eyebrow">A little closer to delicious</p>
+        <h1>Find your<br /><em>next favourite.</em></h1>
+        <p class="hero-intro">Discover independent kitchens, comforting classics and new places to linger.</p>
+        <a class="button button-light" href="#restaurant-results">Explore restaurants <span aria-hidden="true">↓</span></a>
+    </div>
+    <div class="hero-stamp" aria-hidden="true"><span>GOOD<br />FOOD<br /><b>NEARBY</b></span><i>✳</i></div>
+    <div class="hero-scribble" aria-hidden="true">made with appetite</div>
+</section>
+
+<section id="restaurant-results" class="discovery-section">
+    <div class="section-heading">
+        <div>
+            <p class="eyebrow eyebrow-olive">The neighbourhood table</p>
+            <h2>Places worth a visit</h2>
+        </div>
+        <span class="result-count">@totalItemCount restaurants</span>
+    </div>
+
+    <div class="search-panel">
+        <label class="search-field">
+            <span class="sr-only">Search restaurants</span>
+            <span class="search-icon" aria-hidden="true">⌕</span>
+            <input @bind="searchText" @bind:event="oninput" @onkeydown="HandleSearchKeyDown" maxlength="100" placeholder="Try a name, cuisine or description" />
+        </label>
+        <label class="sort-field">
+            <span class="sr-only">Sort restaurants by</span>
+            <select @bind="sortBy">
+                <option value="">Featured order</option>
+                <option value="Name">Name</option>
+                <option value="Category">Cuisine</option>
+                <option value="Description">Description</option>
+            </select>
+        </label>
+        <button class="button button-dark" @onclick="SearchAsync">Search</button>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="notice notice-error" role="alert">@errorMessage</div>
+    }
+    else if (isLoading)
+    {
+        <div class="loading-state" role="status"><span class="spinner"></span>Finding good things nearby…</div>
+    }
+    else if (restaurants.Count == 0)
+    {
+        <div class="empty-state"><span class="empty-icon">✳</span><h3>No restaurants found</h3><p>Try another search, or clear the search box to see all places.</p></div>
+    }
+    else
+    {
+        <div class="restaurant-grid">
+            @foreach (var restaurant in restaurants)
+            {
+                <article class="restaurant-card">
+                    <a class="card-image-link" href="@($"/restaurants/{restaurant.Id}")" aria-label="View @restaurant.Name">
+                        @if (!string.IsNullOrWhiteSpace(restaurant.LogoSasUrl))
+                        {
+                            <img class="restaurant-image" src="@restaurant.LogoSasUrl" alt="@restaurant.Name" />
+                        }
+                        else
+                        {
+                            <div class="image-placeholder"><span>@GetInitials(restaurant.Name)</span><small>@restaurant.Category</small></div>
+                        }
+                        <span class="category-pill">@restaurant.Category</span>
+                    </a>
+                    <div class="card-content">
+                        <div class="card-title-row"><h3><a href="@($"/restaurants/{restaurant.Id}")">@restaurant.Name</a></h3><span class="card-arrow" aria-hidden="true">↗</span></div>
+                        <p class="card-description">@restaurant.Description</p>
+                        <div class="card-meta">
+                            <span>@GetLocation(restaurant)</span>
+                            <span class="delivery-label">@(restaurant.HasDelivery ? "Delivery" : "Dine in")</span>
+                        </div>
+                    </div>
+                </article>
+            }
+        </div>
+
+        <nav class="pagination" aria-label="Restaurant pages">
+            <button class="button button-outline" disabled="@(pageNumber <= 1 || isLoading)" @onclick="PreviousPageAsync">← Previous</button>
+            <span>Page <b>@pageNumber</b> of <b>@totalPages</b></span>
+            <button class="button button-outline" disabled="@(pageNumber >= totalPages || isLoading)" @onclick="NextPageAsync">Next →</button>
+        </nav>
+    }
+</section>
+
+@code {
+    private const int PageSize = 10;
+    private List<Restaurant> restaurants = [];
+    private string searchText = string.Empty;
+    private string? sortBy;
+    private int pageNumber = 1;
+    private int totalPages = 1;
+    private int totalItemCount;
+    private bool isLoading;
+    private string? errorMessage;
+
+    protected override Task OnInitializedAsync() => LoadPageAsync();
+
+    private async Task SearchAsync()
+    {
+        pageNumber = 1;
+        await LoadPageAsync();
+    }
+
+    private async Task HandleSearchKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter")
+            await SearchAsync();
+    }
+
+    private async Task PreviousPageAsync()
+    {
+        if (pageNumber > 1)
+        {
+            pageNumber--;
+            await LoadPageAsync();
+        }
+    }
+
+    private async Task NextPageAsync()
+    {
+        if (pageNumber < totalPages)
+        {
+            pageNumber++;
+            await LoadPageAsync();
+        }
+    }
+
+    private async Task LoadPageAsync()
+    {
+        isLoading = true;
+        errorMessage = null;
+        try
+        {
+            var result = await RestaurantService.GetPageAsync(searchText, pageNumber, PageSize, sortBy, "Ascending");
+            restaurants = result.Items;
+            totalPages = Math.Max(result.TotalPages, 1);
+            totalItemCount = result.TotalItemsCount;
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or HttpRequestException)
+        {
+            errorMessage = exception is HttpRequestException
+                ? "The restaurant service could not be reached. Check that the API is running and try again."
+                : exception.Message;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private static string GetInitials(string name)
+    {
+        var words = name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (words.Length == 0)
+            return "TT";
+        return words.Length > 1 ? $"{words[0][0]}{words[1][0]}" : name[..Math.Min(name.Length, 2)].ToUpperInvariant();
+    }
+
+    private static string GetLocation(Restaurant restaurant) =>
+        string.Join(", ", new[] { restaurant.City, restaurant.Street }.Where(value => !string.IsNullOrWhiteSpace(value)));
+}

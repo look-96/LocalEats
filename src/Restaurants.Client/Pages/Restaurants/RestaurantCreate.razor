@@ -1,0 +1,59 @@
+@page "/restaurants/new"
+@inject RestaurantService RestaurantService
+@inject NavigationManager Navigation
+
+<PageTitle>Add a restaurant | Table &amp; Thyme</PageTitle>
+
+<section class="form-page">
+    <p class="eyebrow eyebrow-olive">Join the neighbourhood table</p>
+    <h1>Add a <em>restaurant.</em></h1>
+    <p class="form-intro">Share the essentials first. You can update the details later.</p>
+    <div class="notice">Creating a listing requires an account with the <strong>Owner</strong> role. New accounts need an administrator to grant that role.</div>
+
+    <EditForm Model="request" OnValidSubmit="CreateAsync" class="editor-form">
+        <DataAnnotationsValidator />
+        <ValidationSummary />
+        <label>Name <InputText @bind-Value="request.Name" autocomplete="organization" /></label>
+        <label>Cuisine <InputSelect @bind-Value="request.Category">
+            <option value="">Choose a cuisine</option>
+            @foreach (var category in Categories) { <option value="@category">@category</option> }
+        </InputSelect></label>
+        <label>Description <InputTextArea @bind-Value="request.Description" rows="4" /></label>
+        <label class="check-row"><InputCheckbox @bind-Value="request.HasDelivery" /> Delivery available</label>
+        <div class="form-grid">
+            <label>City <InputText @bind-Value="request.City" autocomplete="address-level2" /></label>
+            <label>Street <InputText @bind-Value="request.Street" autocomplete="street-address" /></label>
+            <label>Postal code <InputText @bind-Value="request.PostalCode" autocomplete="postal-code" placeholder="00-000" /></label>
+            <label>Contact email <InputText @bind-Value="request.ContactEmail" type="email" autocomplete="email" /></label>
+            <label>Contact number <InputText @bind-Value="request.ContactNumber" type="tel" autocomplete="tel" /></label>
+        </div>
+        @if (!string.IsNullOrWhiteSpace(errorMessage)) { <p class="form-message error-text" role="alert">@errorMessage</p> }
+        <div class="form-actions"><NavLink class="quiet-link" href="/">Cancel</NavLink><button class="button button-dark" disabled="@isSaving">@(isSaving ? "Saving…" : "Create listing")</button></div>
+    </EditForm>
+</section>
+
+@code {
+    private static readonly string[] Categories = ["Italian", "Mexican", "Japanese", "American", "Indian"];
+    private readonly RestaurantCreateRequest request = new();
+    private bool isSaving;
+    private string? errorMessage;
+
+    private async Task CreateAsync()
+    {
+        isSaving = true;
+        errorMessage = null;
+        try
+        {
+            var id = await RestaurantService.CreateAsync(request);
+            Navigation.NavigateTo($"/restaurants/{id}");
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or HttpRequestException)
+        {
+            errorMessage = exception is HttpRequestException ? "The restaurant service could not be reached." : exception.Message;
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+}

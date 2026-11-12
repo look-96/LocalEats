@@ -1,0 +1,74 @@
+@page "/owner/restaurants"
+@attribute [Authorize]
+@inject RestaurantService RestaurantService
+
+<PageTitle>My restaurants | Table &amp; Thyme</PageTitle>
+
+<section class="owner-dashboard">
+    <p class="eyebrow eyebrow-olive">Your workspace</p>
+    <h1>My <em>restaurants.</em></h1>
+    <p class="form-intro">Manage the restaurant listings connected to your owner account.</p>
+
+    @if (isLoading)
+    {
+        <div class="loading-state"><span class="spinner"></span>Loading your listings…</div>
+    }
+    else if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="notice notice-error" role="alert">@errorMessage</div>
+        <p class="form-intro">This workspace is available to accounts with the Owner role.</p>
+    }
+    else if (restaurants.Count == 0)
+    {
+        <div class="empty-state">
+            <span class="empty-icon" aria-hidden="true">✳</span>
+            <h2>No listings yet</h2>
+            <p>Create a restaurant listing to start sharing your menu.</p>
+            <NavLink class="button button-dark" href="/restaurants/new">Create a listing</NavLink>
+        </div>
+    }
+    else
+    {
+        <div class="owner-listings">
+            @foreach (var restaurant in restaurants)
+            {
+                <article class="owner-listing">
+                    <div>
+                        <p class="eyebrow eyebrow-olive">@restaurant.Category</p>
+                        <h2>@restaurant.Name</h2>
+                        <p>@restaurant.City</p>
+                    </div>
+                    <div class="form-actions">
+                        <NavLink class="button button-outline button-small" href="@($"/restaurants/{restaurant.Id}")">View</NavLink>
+                        <NavLink class="button button-dark button-small" href="@($"/restaurants/{restaurant.Id}/edit")">Edit listing</NavLink>
+                        <NavLink class="button button-outline button-small" href="@($"/restaurants/{restaurant.Id}/dishes")">Manage menu</NavLink>
+                    </div>
+                </article>
+            }
+        </div>
+    }
+</section>
+
+@code {
+    private List<Restaurant> restaurants = [];
+    private bool isLoading = true;
+    private string? errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            restaurants = (await RestaurantService.GetMineAsync()).ToList();
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or HttpRequestException)
+        {
+            errorMessage = exception is HttpRequestException
+                ? "The restaurant service could not be reached."
+                : exception.Message;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+}

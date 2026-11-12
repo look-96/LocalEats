@@ -1,0 +1,146 @@
+@page "/restaurants/{Id:int}"
+@inject RestaurantService RestaurantService
+
+<PageTitle>@(restaurant?.Name ?? "Restaurant") | Table &amp; Thyme</PageTitle>
+
+<div class="page-topline"><NavLink class="back-link" href="/">← Back to explore</NavLink></div>
+
+@if (isLoading)
+{
+    <div class="loading-state"><span class="spinner"></span>Setting the table…</div>
+}
+else if (!string.IsNullOrWhiteSpace(errorMessage))
+{
+    <div class="notice notice-error" role="alert">@errorMessage</div>
+}
+else if (restaurant is not null)
+{
+    <article class="detail-hero">
+        <div class="detail-image-wrap">
+            @if (!string.IsNullOrWhiteSpace(restaurant.LogoSasUrl))
+            {
+                <img class="detail-image" src="@restaurant.LogoSasUrl" alt="@restaurant.Name" />
+            }
+            else
+            {
+                <div class="detail-placeholder"><span>@restaurant.Category</span><b>@restaurant.Name</b></div>
+            }
+        </div>
+        <div class="detail-copy">
+            <p class="eyebrow eyebrow-olive">@restaurant.Category</p>
+            <h1>@restaurant.Name</h1>
+            <p class="detail-description">@restaurant.Description</p>
+            <div class="detail-facts">
+                <div><span class="fact-label">Location</span><strong>@GetLocation()</strong></div>
+                <div><span class="fact-label">Dining</span><strong>@(restaurant.HasDelivery ? "Delivery available" : "Visit us in person")</strong></div>
+            </div>
+            <div class="detail-actions">
+                <NavLink class="button button-dark" href="@($"/restaurants/{Id}/dishes")">See the menu <span aria-hidden="true">↗</span></NavLink>
+                <AuthorizeView>
+                    <Authorized>
+                        <NavLink class="button button-outline" href="@($"/restaurants/{Id}/edit")">Edit listing</NavLink>
+                    </Authorized>
+                </AuthorizeView>
+            </div>
+        </div>
+    </article>
+
+    <AuthorizeView>
+        <Authorized>
+            <section class="upload-panel">
+                <div><p class="eyebrow eyebrow-olive">Keep it fresh</p><h2>Update the restaurant image</h2><p>Choose a JPG, PNG or WebP image up to 5 MB.</p></div>
+                <div class="upload-control">
+                    <InputFile OnChange="SelectLogo" accept="image/jpeg,image/png,image/webp" />
+                    <button class="button button-outline" disabled="@(selectedLogo is null || isUploading)" @onclick="UploadLogoAsync">@(isUploading ? "Uploading…" : "Upload image")</button>
+                </div>
+                @if (!string.IsNullOrWhiteSpace(uploadMessage))
+                {
+                    <p class="form-message @(uploadFailed ? "error-text" : "success-text")" role="status">@uploadMessage</p>
+                }
+            </section>
+        </Authorized>
+    </AuthorizeView>
+}
+
+@code {
+    private const long MaxLogoSize = 5 * 1024 * 1024;
+    [Parameter] public int Id { get; set; }
+    private Restaurant? restaurant;
+    private IBrowserFile? selectedLogo;
+    private bool isLoading = true;
+    private bool isUploading;
+    private bool uploadFailed;
+    private string? errorMessage;
+    private string? uploadMessage;
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        isLoading = true;
+        errorMessage = null;
+        try
+        {
+            restaurant = await RestaurantService.GetByIdAsync(Id);
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or HttpRequestException)
+        {
+            errorMessage = exception is HttpRequestException
+                ? "The restaurant service could not be reached. Try again in a moment."
+                : exception.Message;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private string GetLocation() => string.Join(", ", new[] { restaurant?.City, restaurant?.Street, restaurant?.PostalCode }
+        .Where(value => !string.IsNullOrWhiteSpace(value)));
+
+    private void SelectLogo(InputFileChangeEventArgs args)
+    {
+        selectedLogo = args.File;
+        uploadMessage = null;
+        if (selectedLogo.Size > MaxLogoSize)
+        {
+            uploadMessage = "That image is larger than 5 MB.";
+            uploadFailed = true;
+            selectedLogo = null;
+        }
+        else if (selectedLogo.ContentType is not ("image/jpeg" or "image/png" or "image/webp"))
+        {
+            uploadMessage = "Choose a JPG, PNG or WebP image.";
+            uploadFailed = true;
+            selectedLogo = null;
+        }
+    }
+
+    private async Task UploadLogoAsync()
+    {
+        if (selectedLogo is null)
+            return;
+
+        isUploading = true;
+        uploadMessage = null;
+        try
+        {
+            await using var stream = selectedLogo.OpenReadStream(MaxLogoSize);
+            await RestaurantService.UploadLogoAsync(Id, stream, selectedLogo.Name, selectedLogo.ContentType);
+            uploadMessage = "Image uploaded.";
+            uploadFailed = false;
+            selectedLogo = null;
+            await LoadAsync();
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or HttpRequestException or IOException)
+        {
+            uploadMessage = exception is HttpRequestException ? "The image service could not be reached." : exception.Message;
+            uploadFailed = true;
+        }
+        finally
+        {
+            isUploading = false;
+        }
+    }
+
+}

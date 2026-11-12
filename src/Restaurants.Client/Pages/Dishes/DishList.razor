@@ -1,0 +1,106 @@
+@page "/restaurants/{RestaurantId:int}/dishes"
+@inject RestaurantService RestaurantService
+@inject DishService DishService
+
+<PageTitle>Menu | Table &amp; Thyme</PageTitle>
+
+<div class="page-topline"><NavLink class="back-link" href="@($"/restaurants/{RestaurantId}")">← Back to restaurant</NavLink></div>
+
+@if (isLoading)
+{
+    <div class="loading-state"><span class="spinner"></span>Opening the menu…</div>
+}
+else if (!string.IsNullOrWhiteSpace(errorMessage))
+{
+    <div class="notice notice-error" role="alert">@errorMessage</div>
+}
+else
+{
+    <section class="menu-heading">
+        <p class="eyebrow eyebrow-olive">A taste of the place</p>
+        <h1>@restaurant?.Name <em>menu</em></h1>
+        <p>Made for sharing, savouring and coming back for.</p>
+    </section>
+
+    @if (dishes.Count == 0)
+    {
+        <div class="empty-state"><span class="empty-icon">✳</span><h3>Menu coming soon</h3><p>There are no dishes listed here yet.</p></div>
+    }
+    else
+    {
+        <div class="menu-list">
+            @foreach (var dish in dishes)
+            {
+                @if (editingDishId == dish.Id)
+                {
+                    <DishEditForm RestaurantId="@RestaurantId" Dish="dish"
+                                  OnSaved="ReloadDishesAsync" OnCancel="StopEditing" />
+                }
+                else
+                {
+                    <article class="menu-item">
+                        <div><h2>@dish.Name</h2><p>@dish.Description</p>@if (dish.KiloCalories.HasValue) { <span class="calories">@dish.KiloCalories kcal</span> }</div>
+                        <div class="dish-actions">
+                            <strong class="dish-price">@dish.Price.ToString("C")</strong>
+                            <AuthorizeView>
+                                <Authorized>
+                                    <button type="button" class="button button-outline button-small" @onclick="() => StartEditing(dish)">Edit</button>
+                                </Authorized>
+                            </AuthorizeView>
+                        </div>
+                    </article>
+                }
+            }
+        </div>
+    }
+
+    <AuthorizeView>
+        <Authorized>
+            <DishCreateForm RestaurantId="@RestaurantId" OnCreated="ReloadDishesAsync" />
+        </Authorized>
+    </AuthorizeView>
+}
+
+@code {
+    [Parameter] public int RestaurantId { get; set; }
+    private Restaurant? restaurant;
+    private List<Dish> dishes = [];
+    private int? editingDishId;
+    private bool isLoading = true;
+    private string? errorMessage;
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        isLoading = true;
+        errorMessage = null;
+        try
+        {
+            restaurant = await RestaurantService.GetByIdAsync(RestaurantId);
+            dishes = (await DishService.GetForRestaurantAsync(RestaurantId)).ToList();
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or HttpRequestException)
+        {
+            errorMessage = exception is HttpRequestException ? "The menu service could not be reached." : exception.Message;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task ReloadDishesAsync()
+    {
+        await LoadAsync();
+        editingDishId = null;
+    }
+
+    private void StartEditing(Dish dish) => editingDishId = dish.Id;
+
+    private Task StopEditing()
+    {
+        editingDishId = null;
+        return Task.CompletedTask;
+    }
+}
