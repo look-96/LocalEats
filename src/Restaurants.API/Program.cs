@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.RateLimiting;
 using Restaurants.API.Extensions;
 using Restaurants.API.Middlewares;
+using Restaurants.API.Security;
 using Restaurants.Application.Extensions;
 using Restaurants.Domain.Entities;
 using Restaurants.Infrastructure.Extensions;
@@ -60,14 +61,24 @@ try
 
     app.UseCors("RestaurantsClient");
     app.UseRateLimiter();
+    app.UseAuthentication();
+    app.UseMiddleware<AntiforgeryValidationMiddleware>();
 
     app.UseOutputCache();
-
-    app.UseAuthentication();
 
     var identityGroup = app.MapGroup("api/identity").WithTags("Identity");
     identityGroup.RequireRateLimiting("IdentityByIp");
     identityGroup.MapIdentityApi<User>();
+    identityGroup.MapPost("logout", async (Microsoft.AspNetCore.Identity.SignInManager<User> signInManager) =>
+    {
+        await signInManager.SignOutAsync();
+        return Results.NoContent();
+    }).RequireAuthorization();
+    app.MapGet("/api/security/antiforgery", (Microsoft.AspNetCore.Antiforgery.IAntiforgery antiforgery, HttpContext context) =>
+    {
+        var tokens = antiforgery.GetAndStoreTokens(context);
+        return Results.Ok(new { requestToken = tokens.RequestToken });
+    }).AllowAnonymous();
 
     app.UseAuthorization();
 

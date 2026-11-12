@@ -24,7 +24,8 @@ This capstone brings together C#, ASP.NET Core, REST APIs, Blazor, EF Core, auth
 
 ### Platform behavior
 
-- ASP.NET Core Identity issues short-lived bearer access tokens and refresh tokens.
+- ASP.NET Core Identity uses an HttpOnly, Secure, SameSite=Strict session cookie for browser sign-in.
+- Browser state-changing API requests include an antiforgery token; authentication tokens are not exposed to browser storage.
 - The API checks roles and restaurant ownership; client-side controls are for usability only.
 - Public catalog responses are cached for up to two minutes and invalidated after successful writes.
 - Restaurant list queries use `AsNoTracking()` and paged results.
@@ -40,7 +41,7 @@ flowchart LR
     Admin[Administrator] --> Client
 
     Client -->|REST / JSON| API[ASP.NET Core API]
-    Client -->|Identity bearer and refresh tokens| Identity[ASP.NET Core Identity]
+    Client -->|Secure session cookie and antiforgery token| Identity[ASP.NET Core Identity]
     Identity --> API
 
     API --> Controllers[Controllers]
@@ -52,7 +53,7 @@ flowchart LR
     Infra --> Blob[Azure Blob Storage]
 
     API --> Cache[In-memory output cache]
-    API --> Middleware[Error handling and request timing]
+    API --> Middleware[Error handling, request timing, and antiforgery validation]
 
     GitHub[GitHub Actions CI] --> Build[Restore and build solution]
     Build --> API
@@ -67,7 +68,7 @@ flowchart LR
 | `src/Restaurants.Application` | Use cases, MediatR handlers, DTOs, and FluentValidation rules |
 | `src/Restaurants.Domain` | Restaurant and dish entities, interfaces, and repository contracts |
 | `src/Restaurants.Infrastructure` | EF Core, SQL Server, Identity, authorization, and blob storage |
-| `src/Restaurants.Client` | Blazor WebAssembly pages, forms, API clients, and browser token handling |
+| `src/Restaurants.Client` | Blazor WebAssembly pages, forms, cookie-aware API clients, and authentication state |
 | `tests/Restaurants.APITests` | API-level tests |
 | `tests/Restaurants.ApplicationTests` | Application and validation tests |
 | `tests/Restaurants.InfrastructureTests` | Persistence and authorization tests |
@@ -102,8 +103,10 @@ All routes use the `/api` prefix.
 | `POST` | `/restaurants/{restaurantId}/dishes` | Signed in; owner checked by handler | Create a dish |
 | `PUT` | `/restaurants/{restaurantId}/dishes/{dishId}` | Signed in; owner checked by handler | Update a dish |
 | `POST` | `/identity/register` | Public | Register an account |
-| `POST` | `/identity/login` | Public | Sign in and receive tokens |
-| `POST` | `/identity/refresh` | Refresh token | Refresh an access token |
+| `POST` | `/identity/login` | Public | Sign in and receive a secure session cookie |
+| `POST` | `/identity/logout` | Signed in | End the current session |
+| `GET` | `/identity/session` | Signed in | Read the current account and roles |
+| `GET` | `/security/antiforgery` | Public | Issue a request token for browser form/API requests |
 | `PATCH` | `/identity/user` | Signed in | Update the current account |
 | `POST` / `DELETE` | `/identity/userRole` | Admin role | Assign or remove a user role |
 
@@ -123,7 +126,9 @@ There are no restaurant or dish `DELETE` endpoints by design. The API returns `4
 - Client checks improve feedback but can be bypassed. The API repeats validation with FluentValidation and must remain the authoritative boundary.
 - SQL injection is prevented by EF Core LINQ queries and parameterized Identity operations. Sort fields come from a fixed allowlist. Do not build SQL by concatenating user input; stripping SQL keywords is not a reliable defense and can damage legitimate search text.
 - Blazor/Razor encodes ordinary string values when rendering HTML. The UI does not render user input as `MarkupString` or raw HTML. Keep it that way; rich HTML would need a separate sanitization policy.
-- Logo uploads have a 5 MB limit and are checked against the extension, declared media type, and file signature. The server generates the blob name.
+- Browser sign-in uses an HttpOnly, Secure, SameSite=Strict cookie. The client does not store authentication tokens in `sessionStorage` or `localStorage`.
+- State-changing API requests made with the authentication cookie are checked against an antiforgery request token. The browser client obtains this token from `/api/security/antiforgery` and sends it in `X-CSRF-TOKEN`.
+- Logo uploads have a 5 MB limit, match extension, declared media type, signature, and a 40-megapixel dimension ceiling. The server generates the blob name. This metadata check does not decode and re-encode the image.
 - Secrets and database credentials belong in user secrets or deployment secret storage, never in source control.
 
 ## Run locally
@@ -198,19 +203,21 @@ Use this list for the local walkthrough:
 
 ### Validation status
 
-- The user's full-solution build passed after the owner workspace and dish-editing changes. After client input normalization, the standalone Blazor client build also passed with zero warnings; the API source has not changed since that full-solution build.
-- Automated test execution and the browser-level walkthrough still need a confirmed result. The assistant execution environment's test run stalled before producing output; no passing test result is claimed here.
-- The local API walkthrough also needs SQL Server LocalDB and Azurite available. LocalDB's instance registry could not be accessed in the assistant environment, and Azurite was not installed.
-- Azure deployment has intentionally not been attempted.
+- The user previously confirmed the baseline solution built and its tests passed. The security changes in this revision still need a full local build, test run, and browser login/CSRF walkthrough.
+- A full build in the assistant environment could not complete because the .NET WebAssembly `ComputeWasmBuildAssets` task host failed to start (`MSB4216`). No passing build or test result is claimed for this revision.
+- Google Cloud deployment is not part of this security code change.
 
 ## Security controls implemented
 
 - ASP.NET Core rate limits Identity endpoints (including register, login, and refresh) to 10 requests per minute per observed client IP, returning HTTP 429 when exceeded. Custom Identity controller endpoints use the same policy. Behind a reverse proxy, configure and trust forwarded headers only for known proxy addresses before relying on client IP partitioning; otherwise the API may see the proxy IP for all clients.
+- Browser authentication uses an eight-hour, HttpOnly, Secure, SameSite=Strict session cookie. The Blazor client does not store access or refresh tokens in browser storage.
+- Cookie-authenticated state-changing API requests are checked against an antiforgery token sent in `X-CSRF-TOKEN`; the token endpoint is `/api/security/antiforgery`.
 - API responses include `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, and a restrictive `Permissions-Policy`. HSTS is enabled outside Development.
 - The Blazor entry page has a Content Security Policy meta policy that restricts script and connection sources while allowing WebAssembly compilation and the app's Google Fonts. Since CSP in a meta tag cannot enforce every directive, the production static host should also emit the equivalent policy as an HTTP response header and set `frame-ancestors 'none'` there.
 - Optional bootstrap Admin provisioning is idempotent and disabled unless both `BootstrapAdmin:Email` and `BootstrapAdmin:Password` are configured. The password goes through ASP.NET Core Identity hashing; it is never stored in source files. Existing accounts are not reset, but are granted the Admin role when bootstrap configuration is supplied.
 - Successful Admin role assignment and removal events log the actor's user ID, target account email, role, and operation. Protect logs from unauthorized access and retain them according to the operator's policy.
 - User text is normalized and validated; SQL is accessed through EF Core parameterized queries, and Razor encodes ordinary text output. Sanitization complements these controls and is not a substitute for them.
+- Logo uploads are limited to 5 MB and 40 megapixels and checked against extension, declared media type, file signature, and image dimensions. The API does not currently decode/re-encode image bytes.
 
 To provision the first local Admin, initialize .NET User Secrets and set both values in PowerShell (choose a unique, strong password):
 
@@ -224,11 +231,10 @@ Start the API once so the account is created, then remove both settings with `do
 
 ## Remaining security work
 
-1. Verify the CSP against all routes and browser behaviors; configure it as an HTTP response header at the production static host before deployment.
-2. Configure trusted forwarded headers and load-test/tune rate limits for the intended hosting topology.
-3. Consider an OpenID Connect/BFF design with Secure, HttpOnly cookies if moving beyond a demo; the current browser token session is accessible to same-origin scripts.
-4. Re-encode uploaded images server-side and consider malware scanning if arbitrary public uploads become a real requirement.
-5. Define an operational Admin recovery process and tamper-resistant audit retention if real user accounts are introduced.
+1. Verify cookie login/logout and antiforgery behavior in the browser, including cross-origin local development and same-origin Cloud Run hosting.
+2. Verify the rate limiter's client IP behavior on Cloud Run. Do not trust arbitrary forwarded headers; use a verified proxy setup or edge rate limiting such as Cloud Armor where appropriate.
+3. Consider server-side image decode/re-encode and malware scanning before accepting public uploads from real users.
+4. Define an operational Admin recovery process and tamper-resistant audit retention if real user accounts are introduced.
 
 ## AI assistance disclosure
 

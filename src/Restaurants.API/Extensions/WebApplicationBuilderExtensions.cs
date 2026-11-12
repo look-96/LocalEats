@@ -6,6 +6,7 @@ using Restaurants.API.Services;
 using Restaurants.API.Security;
 using Restaurants.Application.User;
 using Serilog;
+using Microsoft.AspNetCore.Authentication.Cookies;
 
 namespace Restaurants.API.Extensions;
 
@@ -15,6 +16,27 @@ public static class WebApplicationBuilderExtensions
     {
         builder.WebHost.ConfigureKestrel(options => options.Limits.MaxRequestBodySize = 1024 * 1024);
         builder.Services.AddAuthentication();
+        builder.Services.ConfigureApplicationCookie(options =>
+        {
+            options.Cookie.Name = "__Host-LocalEats.Auth";
+            options.Cookie.HttpOnly = true;
+            options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+            options.Cookie.SameSite = SameSiteMode.Strict;
+            options.Cookie.Path = "/";
+            options.Cookie.IsEssential = true;
+            options.SlidingExpiration = true;
+            options.ExpireTimeSpan = TimeSpan.FromHours(8);
+        });
+        builder.Services.AddAntiforgery(options =>
+        {
+            options.HeaderName = "X-CSRF-TOKEN";
+            options.Cookie.Name = "__Host-LocalEats.Antiforgery";
+            options.Cookie.HttpOnly = true;
+            options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+            options.Cookie.SameSite = SameSiteMode.Strict;
+            options.Cookie.Path = "/";
+            options.Cookie.IsEssential = true;
+        });
         builder.Services.AddHttpContextAccessor();
         builder.Services.AddScoped<IUserContext, HttpUserContext>();
         builder.Services.AddScoped<IAdminCredentialVerifier, AdminCredentialVerifier>();
@@ -44,7 +66,7 @@ public static class WebApplicationBuilderExtensions
             var origins = builder.Configuration.GetSection("AllowedOrigins").Get<string[]>() ?? [];
             if (origins.Length > 0)
             {
-                policy.WithOrigins(origins).AllowAnyHeader().AllowAnyMethod();
+                policy.WithOrigins(origins).AllowAnyHeader().AllowAnyMethod().AllowCredentials();
             }
         }));
         builder.Services.AddSwaggerGen(c =>

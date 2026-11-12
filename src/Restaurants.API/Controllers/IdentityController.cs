@@ -16,6 +16,18 @@ namespace Restaurants.API.Controllers;
 [Route("api/identity")]
 public class IdentityController(IMediator mediator, ILogger<IdentityController> logger) : ControllerBase
 {
+    [HttpGet("session")]
+    [Authorize]
+    public IActionResult GetSession()
+    {
+        return Ok(new
+        {
+            userId = User.FindFirstValue(ClaimTypes.NameIdentifier),
+            email = User.FindFirstValue(ClaimTypes.Email),
+            roles = User.FindAll(ClaimTypes.Role).Select(claim => claim.Value).ToArray()
+        });
+    }
+
     [HttpPatch("user")]
     [Authorize]
     public async Task<IActionResult> UpdateUserDetails(UpdateUserDetailsCommand command)

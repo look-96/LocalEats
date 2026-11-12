@@ -405,7 +405,7 @@ If a separate project is not affordable during capstone testing, keep Production
 
 ### 13. Final step: current security review and comprehensive README
 
-After hosting smoke checks pass, review authentication/token storage, owner authorization, input validation, EF parameterization, XSS/output encoding, logo upload validation, signed URL expiry, private bucket IAM, Data Protection persistence, CORS/CSP, forwarded headers, rate limits, secrets, logs, database permissions, and Cloud Run/IAM configuration. Record any remaining limitation, especially that Identity tokens in browser storage are accessible to same-origin scripts; use fake accounts until the chosen auth model is appropriate for real users.
+After hosting smoke checks pass, review cookie authentication and antiforgery validation, owner authorization, input validation, EF parameterization, XSS/output encoding, logo upload validation and image dimensions, signed URL expiry, private bucket IAM, Data Protection persistence, CORS/CSP, forwarded headers, rate limits, secrets, logs, database permissions, and Cloud Run/IAM configuration. Browser authentication now uses an HttpOnly cookie rather than browser-readable access and refresh tokens. Verify cookie and antiforgery behavior through the deployed same-origin app before using real accounts.
 
 Then replace/update `README.md` with setup, configuration, migrations, local run/test, GCP Development deployment, Production prerequisites, CI/CD, and security notes. Include Mermaid diagrams for architecture, API route groups, and login/restaurant/dish/logo data flow. Re-run Release build, all tests, dependency audit, and container build.
 

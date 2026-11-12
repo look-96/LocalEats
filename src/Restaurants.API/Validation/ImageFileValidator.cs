@@ -4,6 +4,7 @@ public static class ImageFileValidator
 {
     public const long MaxFileSize = 5 * 1024 * 1024;
     public const long MaxRequestSize = MaxFileSize + 64 * 1024;
+    public const long MaxPixelCount = 40_000_000;
 
     public static async Task<string?> GetValidatedContentTypeAsync(IFormFile? file, CancellationToken cancellationToken)
     {
@@ -33,6 +34,9 @@ public static class ImageFileValidator
             _ => false
         };
 
-        return isValid ? $"image/{allowed}" : null;
+        if (!isValid || !await ImageDimensionValidator.HasAllowedDimensionsAsync(file, allowed, cancellationToken))
+            return null;
+
+        return $"image/{allowed}";
     }
 }

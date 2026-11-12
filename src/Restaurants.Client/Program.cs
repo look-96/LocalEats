@@ -20,11 +20,12 @@ if (apiBaseUri.Scheme != Uri.UriSchemeHttps &&
     throw new InvalidOperationException("ApiBaseUrl must resolve to HTTPS outside local development.");
 }
 
-builder.Services.AddTransient<BearerTokenHandler>();
+builder.Services.AddScoped<AntiforgeryTokenProvider>();
+builder.Services.AddTransient<ApiSecurityHandler>();
 builder.Services.AddHttpClient("RestaurantsApi", client => client.BaseAddress = apiBaseUri)
-    .AddHttpMessageHandler<BearerTokenHandler>();
-builder.Services.AddHttpClient("IdentityApi", client => client.BaseAddress = apiBaseUri);
-builder.Services.AddScoped<BrowserTokenStore>();
+    .AddHttpMessageHandler<ApiSecurityHandler>();
+builder.Services.AddHttpClient("IdentityApi", client => client.BaseAddress = apiBaseUri)
+    .AddHttpMessageHandler<ApiSecurityHandler>();
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<AuthenticationStateProvider>(services => services.GetRequiredService<AuthService>());
 builder.Services.AddAuthorizationCore();
