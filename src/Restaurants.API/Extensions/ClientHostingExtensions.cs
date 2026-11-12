@@ -9,6 +9,7 @@ public static class ClientHostingExtensions
         app.UseDefaultFiles();
         var contentTypes = new FileExtensionContentTypeProvider();
         contentTypes.Mappings[".dat"] = "application/octet-stream";
+        contentTypes.Mappings[".pdb"] = "application/octet-stream";
         app.UseStaticFiles(new StaticFileOptions { ContentTypeProvider = contentTypes });
     }
 
