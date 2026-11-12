@@ -235,7 +235,3 @@ Start the API once so the account is created, then remove both settings with `do
 2. Verify the rate limiter's client IP behavior on Cloud Run. Do not trust arbitrary forwarded headers; use a verified proxy setup or edge rate limiting such as Cloud Armor where appropriate.
 3. Consider server-side image decode/re-encode and malware scanning before accepting public uploads from real users.
 4. Define an operational Admin recovery process and tamper-resistant audit retention if real user accounts are introduced.
-
-## AI assistance disclosure
-
-Codex assisted with planning, code changes, and this documentation. Microsoft Copilot was not used in this environment; if the course submission requires Copilot evidence, collect it separately and describe it accurately.
