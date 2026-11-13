@@ -194,7 +194,7 @@ New accounts do not automatically receive the `Owner` role. An administrator mus
 
 - Live Development URL: <https://localeats-dev-449901250411.europe-central2.run.app>.
 - The Development service, PostgreSQL database, logo bucket, KMS key, Secret Manager secrets, and migration job are documented in [GOOGLE_CLOUD_DEPLOYMENT_GUIDE.md](GOOGLE_CLOUD_DEPLOYMENT_GUIDE.md).
-- GitHub Workload Identity Federation and Development variables are configured. The gated deployment of commit `185c6ac6ed93890c900b32bcff0b78962a0d6c64` deployed Cloud Run revision `localeats-dev-00010-rsv`; migration, `/health`, and homepage checks passed. Cloud Run reported a warning while setting the service IAM policy, so verify the public `allUsers` invoker binding with `gcloud run services get-iam-policy` before relying on unauthenticated access.
+- GitHub Workload Identity Federation and Development variables are configured. The gated deployment of commit `185c6ac6ed93890c900b32bcff0b78962a0d6c64` deployed Cloud Run revision `localeats-dev-00010-rsv`; migration, `/health`, and homepage checks passed. Cloud Run reported a warning while setting the service IAM policy, but follow-up CLI verification confirmed that the public `allUsers` binding with `roles/run.invoker` remains in place.
 - Production is not provisioned. Keep its gate disabled until it has a separate project, database, bucket, KMS key, identities, secrets, backups, budget alerts, monitoring, and GitHub approval protection.
 
 ## Manual validation record
@@ -218,7 +218,7 @@ Use this checklist for local and deployed manual verification:
 - GitHub Actions run 47 passed for `main` commit `01a017576f9623dd7afcd636bedd8e34048768dc`.
 - The user completed the Development browser walkthrough: sign-up/sign-in/session/logout, owner create/edit, logo upload/display, dish create/edit, cross-owner `403`, XSS-shaped input validation, SQL-shaped search, unsupported/oversized upload rejection, and signed-out owner-route handling.
 - `/health`, the homepage, antiforgery token endpoint, and the Blazor PDB asset returned expected successful responses during Cloud Run checks. The user confirmed the duplicate navigation and normal unauthenticated error banner are fixed.
-- Revision `localeats-dev-00010-rsv` was deployed by the gated GitHub workflow, and the user confirmed the branded loading screen looks right. Data Protection/database/logo persistence across a new Cloud Run revision, public invoker IAM verification, client-IP rate-limit behavior through Cloud Run, and Cloud SQL cost/credit review remain operational checks.
+- Revision `localeats-dev-00010-rsv` was deployed by the gated GitHub workflow, and the user confirmed the branded loading screen looks right. Data Protection/database/logo persistence across a new Cloud Run revision, public invoker IAM binding (confirmed), client-IP rate-limit behavior through Cloud Run, and Cloud SQL cost/credit review remain operational checks.
 
 ## Security controls implemented
 
@@ -250,7 +250,7 @@ Start the API once so the account is created, then remove both settings with `do
 
 ## NEXT TO DEVELOP
 
-1. **Verify ongoing Development operations.** Verify the Cloud Run public invoker IAM binding, rehearse rollback to the previous image, and keep Production disabled until separate resources are ready.
+1. **Verify ongoing Development operations.** Rehearse rollback to the previous image, and keep Production disabled until separate resources are ready.
 2. **Complete cloud operations verification.** Verify database records, logos, and Data Protection keys across the new Cloud Run revision; confirm Cloud Run forwarded-IP behavior for rate limits; review Cloud SQL costs and budget alerts.
 3. **Prepare Production separately.** Use a separate Google Cloud project and isolated database, logo bucket, KMS key, runtime/deployer identities, secrets, backups, monitoring, and budget alerts. Add required GitHub Production approval and test restore/rollback before enabling the gate.
 4. **Scale caching deliberately.** The output cache is process-local. Before increasing Cloud Run above one instance, design distributed caching and cross-instance invalidation or retain the current single-instance cap.
