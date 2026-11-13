@@ -387,7 +387,7 @@ Do not test real user data or treat the Development service as a production rest
 
 ### 11. Configure the gated Google Cloud CD workflow
 
-The repository now has a separate `.github/workflows/deploy-gcp.yml`. It waits for a successful push-triggered `LocalEats CI` run, checks out that exact commit, builds an image tagged with the full commit SHA, runs the configured PostgreSQL migration job, updates the cleanup-job image, deploys the Cloud Run service, and checks its health. Pull requests, workflow-dispatch runs, forked repositories, and unsuccessful CI runs cannot deploy.
+The repository now has a reusable `.github/workflows/deploy-gcp.yml` called by `.github/workflows/main.yml` only after its `build` job succeeds on a push. This preserves the pushed branch ref for GitHub environment branch rules while deploying the exact validated commit SHA. It builds an image tagged with the full commit SHA, runs the configured PostgreSQL migration job, updates the cleanup-job image, deploys the Cloud Run service, and checks its health. Pull requests, workflow-dispatch runs, and pushes from other repositories cannot deploy.
 
 - Development deploys from `develop` only when repository variable `GCP_DEV_DEPLOY_ENABLED` is exactly `true` and the GitHub `Development` environment is configured.
 - Production deploys from `main` only when `GCP_PROD_DEPLOY_ENABLED` is exactly `true` and the GitHub `Production` environment has required reviewer approval. Keep it unset or `false`; Production resources do not exist yet.

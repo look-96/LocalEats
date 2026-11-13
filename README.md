@@ -192,7 +192,7 @@ New accounts do not automatically receive the `Owner` role. An administrator mus
 
 ## CI
 
-`.github/workflows/main.yml` runs restore, dependency audit, Release build, tests, and a Docker build for pushes and pull requests to `main` and `develop`. `.github/workflows/deploy-gcp.yml` waits for a successful CI push, then can deploy the exact validated commit to Cloud Run. Development and Production deployments require separate GitHub environment variables, GitHub OIDC/Google Workload Identity Federation, and the `GCP_DEV_DEPLOY_ENABLED` or `GCP_PROD_DEPLOY_ENABLED` repository gate. Keep both gates unset or `false` until each environment is configured and reviewed. The deployer uses the custom no-delete Cloud Run role defined in `localeats-gcp-deployer-role.yaml`; do not replace it with Cloud Run Admin or Developer.
+`.github/workflows/main.yml` runs restore, dependency audit, Release build, tests, and a Docker build for pushes and pull requests to `main` and `develop`. After a successful push build, it calls `.github/workflows/deploy-gcp.yml` as a reusable workflow so the pushed branch ref remains available for GitHub environment branch rules. Development and Production deployments require separate GitHub environment variables, GitHub OIDC/Google Workload Identity Federation, and the `GCP_DEV_DEPLOY_ENABLED` or `GCP_PROD_DEPLOY_ENABLED` repository gate. Keep both gates unset or `false` until each environment is configured and reviewed. The deployer uses the custom no-delete Cloud Run role defined in `localeats-gcp-deployer-role.yaml`; do not replace it with Cloud Run Admin or Developer.
 
 ## Google Cloud Development deployment
 
