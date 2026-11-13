@@ -37,3 +37,12 @@ jobs:
       - name: Build container image
         run: docker build --tag localeats:ci .
 
+  deploy:
+    name: Deploy after successful CI
+    needs: build
+    if: github.event_name == 'push'
+    uses: ./.github/workflows/deploy-gcp.yml
+    permissions:
+      contents: read
+      id-token: write
+
