@@ -3,12 +3,10 @@
         <Found Context="routeData">
             <AuthorizeRouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)">
                 <NotAuthorized>
-                    <LayoutView Layout="@typeof(MainLayout)">
-                        <section class="notice" role="status">
-                            <p>Sign in to open this page.</p>
-                            <NavLink href="/login">Go to sign in</NavLink>
-                        </section>
-                    </LayoutView>
+                    <section class="notice" role="status">
+                        <p>Sign in to open this page.</p>
+                        <NavLink href="/login">Go to sign in</NavLink>
+                    </section>
                 </NotAuthorized>
             </AuthorizeRouteView>
             <FocusOnNavigate RouteData="@routeData" Selector="h1" />
