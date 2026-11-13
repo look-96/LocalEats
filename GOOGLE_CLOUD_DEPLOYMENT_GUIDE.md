@@ -385,17 +385,49 @@ Then use a test account and verify, in order:
 
 Do not test real user data or treat the Development service as a production restaurant platform.
 
-### 11. Add gated Google Cloud CD
+### 11. Configure the gated Google Cloud CD workflow
 
-Removed the stale Azure Web Apps release workflow. The remaining GitHub Actions workflow now runs restore, Release build, tests, and a Docker image build on pushes and pull requests to `main`; it does not deploy. After manual Cloud Run verification, add a separate gated Google Cloud deployment workflow that:
+The repository now has a separate `.github/workflows/deploy-gcp.yml`. It waits for a successful push-triggered `LocalEats CI` run, checks out that exact commit, builds an image tagged with the full commit SHA, runs the configured PostgreSQL migration job, updates the cleanup-job image, deploys the Cloud Run service, and checks its health. Pull requests, workflow-dispatch runs, forked repositories, and unsuccessful CI runs cannot deploy.
 
-- Runs .NET 10 restore, vulnerability audit, Release build, all tests, and Docker build on pull requests and pushes.
-- Deploys Development from `develop` only after CI succeeds and `GCP_DEV_DEPLOY_ENABLED=true`.
-- Deploys Production from `main` only after Development verification and an explicit GitHub Production environment approval.
-- Builds an image tagged with the full commit SHA, applies PostgreSQL migration job, updates its image, then deploys Cloud Run and checks health/static assets.
-- Uses GitHub OIDC and Google Workload Identity Federation; do not store a service-account JSON key in GitHub.
+- Development deploys from `develop` only when repository variable `GCP_DEV_DEPLOY_ENABLED` is exactly `true` and the GitHub `Development` environment is configured.
+- Production deploys from `main` only when `GCP_PROD_DEPLOY_ENABLED` is exactly `true` and the GitHub `Production` environment has required reviewer approval. Keep it unset or `false`; Production resources do not exist yet.
+- `main.yml` now runs CI on pushes and pull requests to both `main` and `develop`.
+- The deployment jobs use GitHub OIDC and Google Workload Identity Federation. Do not add service-account JSON keys to GitHub.
 
-Set up a Workload Identity Pool/provider restricted to the exact repository and branch/environment, then bind separate deployer service accounts for Development and Production. Configure GitHub environment variables for project, region, repo, service account, Cloud SQL instance, bucket, KMS key, secret names, Cloud Run service, and migration job. Keep deploy gates false until the manual Deployment checks above pass. Google’s [Workload Identity Federation deployment-pipeline guide](https://docs.cloud.google.com/iam/docs/workload-identity-federation-with-deployment-pipelines) documents GitHub OIDC and short-lived credentials.
+Configure the GitHub environments with branch restrictions and the required variables listed in the workflow. The `Development` environment needs its project, region, Artifact Registry repository, WIF provider, deployer/runtime service accounts, Cloud SQL instance, database/admin-hash secret names, GCS bucket, KMS key, Cloud Run service, migration job, and cleanup job. Set up a distinct Production environment only after provisioning separate Production resources. Restrict WIF to `look-96/LocalEats` and the exact GitHub environment subject; use distinct deployer identities. Do not grant `roles/run.admin` or `roles/run.developer`: both include Cloud Run deletion permissions. Create the project custom role in `localeats-gcp-deployer-role.yaml` and grant it to the deployer. It can update existing services/jobs and execute the migration job, but has no resource deletion permission. Grant `roles/artifactregistry.writer` only on the required Artifact Registry repository and `roles/iam.serviceAccountUser` only on the environment's runtime service account. The migration and cleanup jobs keep their own runtime identities and secret access. Verify the custom role permission list is supported in the project before creating it.
+
+In Cloud Shell, after pushing this role file to GitHub and pulling the updated repository, create the role and bind it to the Development deployer:
+
+```bash
+PROJECT="project-2d1307cc-ca8a-4589-b39"
+DEPLOYER="localeats-github-dev@${PROJECT}.iam.gserviceaccount.com"
+RUNTIME="localeats-runtime@${PROJECT}.iam.gserviceaccount.com"
+
+gcloud iam roles create localeatsCiCdDeployer \
+  --project="$PROJECT" \
+  --file=localeats-gcp-deployer-role.yaml
+
+gcloud projects add-iam-policy-binding "$PROJECT" \
+  --member="serviceAccount:${DEPLOYER}" \
+  --role="projects/${PROJECT}/roles/localeatsCiCdDeployer"
+
+gcloud artifacts repositories add-iam-policy-binding listlift \
+  --location=europe-central2 \
+  --project="$PROJECT" \
+  --member="serviceAccount:${DEPLOYER}" \
+  --role="roles/artifactregistry.writer"
+
+gcloud iam service-accounts add-iam-policy-binding "$RUNTIME" \
+  --project="$PROJECT" \
+  --member="serviceAccount:${DEPLOYER}" \
+  --role="roles/iam.serviceAccountUser"
+```
+
+The workflow updates already-existing Cloud Run service and job resources. It does not create or delete those resources. The custom role deliberately lacks all Cloud Run delete permissions. The deployment identity still has update access, so protect GitHub workflow changes and require review before merging changes to the deployment workflow.
+
+Create the GitHub OIDC provider with a condition that restricts the exact repository and environment subjects. GitHub's environment subject may include immutable repository IDs, so use the environment suffix together with the exact `assertion.repository` claim rather than hard-coding the subject's repository-name prefix. Restrict the GitHub `Development` environment to the `develop` branch and `Production` to `main`. Google's [Workload Identity Federation deployment-pipeline guide](https://docs.cloud.google.com/iam/docs/workload-identity-federation-with-deployment-pipelines), [Cloud Run IAM permissions](https://docs.cloud.google.com/run/docs/reference/iam/permissions), and [Cloud Run roles](https://docs.cloud.google.com/run/docs/reference/iam/roles) are the source references for WIF and permission setup.
+
+The workflow is prepared but not active: Workload Identity Federation, GitHub environment variables, a pushed `develop` branch, and the Development gate are still required. The gates are currently unset/disabled. Google's [Workload Identity Federation deployment-pipeline guide](https://docs.cloud.google.com/iam/docs/workload-identity-federation-with-deployment-pipelines) documents GitHub OIDC and short-lived credentials.
 
 ### 12. Prepare Production as a separate environment
 
@@ -407,7 +439,7 @@ If a separate project is not affordable during capstone testing, keep Production
 
 After hosting smoke checks pass, review cookie authentication and antiforgery validation, owner authorization, input validation, EF parameterization, XSS/output encoding, logo upload validation and image dimensions, signed URL expiry, private bucket IAM, Data Protection persistence, CORS/CSP, forwarded headers, rate limits, secrets, logs, database permissions, and Cloud Run/IAM configuration. Browser authentication now uses an HttpOnly cookie rather than browser-readable access and refresh tokens. Verify cookie and antiforgery behavior through the deployed same-origin app before using real accounts.
 
-Then replace/update `README.md` with setup, configuration, migrations, local run/test, GCP Development deployment, Production prerequisites, CI/CD, and security notes. Include Mermaid diagrams for architecture, API route groups, and login/restaurant/dish/logo data flow. Re-run Release build, all tests, dependency audit, and container build.
+The security review and README were updated on 13 November 2026 to document the Cloud Run Development deployment, current controls and gaps, endpoint reference, architecture/data flow, and `NEXT TO DEVELOP` roadmap. The user-reported Release build and 34 tests passed after the security changes; GitHub Actions run 47 passed on the deployed commit. The current remaining cloud checks are recorded in the README roadmap: WIF-backed Development deployment, cross-revision persistence, expiry cleanup observation, rate-limit proxy behavior, and billing review. No Production environment has been provisioned.
 
 ## Cost and operational notes
 

@@ -50,14 +50,23 @@ flowchart LR
     App --> Infra[Infrastructure services]
     Infra --> EF[EF Core repositories]
     EF --> SQL[(SQL Server)]
-    Infra --> Blob[Azure Blob Storage]
+    Infra --> Blob[Private logo storage<br/>Azurite locally; Google Cloud Storage on Cloud Run]
+    Infra --> DP[ASP.NET Core Data Protection]
+    DP --> KMS[Cloud Storage key ring encrypted with Cloud KMS]
+    API --> PG[(Cloud SQL PostgreSQL on Cloud Run)]
+
+    Scheduler[Cloud Scheduler<br/>every 15 minutes] --> Cleanup[Cloud Run cleanup job]
+    Cleanup --> PG
+    Cleanup --> Blob
 
     API --> Cache[In-memory output cache]
     API --> Middleware[Error handling, request timing, and antiforgery validation]
 
-    GitHub[GitHub Actions CI] --> Build[Restore and build solution]
+    GitHub[GitHub Actions CI] --> Build[Restore, audit, test, and build image]
     Build --> API
     Build --> Client
+    Build --> Deploy[Google Cloud CD<br/>gated by Workload Identity Federation]
+    Deploy --> API
 ```
 
 ## Solution structure
@@ -77,13 +86,12 @@ The central data relationship is **Restaurant 1 → many Dishes**. Each restaura
 
 ## Technology
 
-- ASP.NET Core 8 Web API
-- Blazor WebAssembly client targeting .NET 9
-- C# and .NET SDKs 8 and 9
-- Entity Framework Core and SQL Server
+- ASP.NET Core 10 Web API and Blazor WebAssembly client targeting .NET 10
+- C# and .NET SDK 10
+- Entity Framework Core with SQL Server for local development and PostgreSQL for Google Cloud
 - ASP.NET Core Identity API endpoints
 - MediatR, FluentValidation, and AutoMapper
-- Azure Blob Storage for restaurant logos
+- Azurite for local logo-storage development; private Google Cloud Storage for Cloud Run
 - Serilog, Swagger/OpenAPI, and GitHub Actions
 
 ## API overview
@@ -135,7 +143,7 @@ There are no restaurant or dish `DELETE` endpoints by design. The API returns `4
 
 ### Requirements
 
-- .NET 8 and .NET 9 SDKs.
+- .NET SDK 10.
 - SQL Server LocalDB or another SQL Server connection.
 - Azurite or an Azure Storage account for logo uploads.
 
@@ -168,7 +176,7 @@ In a second terminal:
 dotnet run --project .\src\Restaurants.Client\Restaurants.Client.csproj
 ```
 
-The client uses `https://localhost:7055` and calls the API at `https://localhost:7149`. Development CORS must include the client origin. For a different local port or a deployment, update `ApiBaseUrl` in client configuration and `AllowedOrigins` in API configuration.
+The client uses `https://localhost:7055` and calls the API at `https://localhost:7149`. Development CORS must include the client origin. Cloud Run serves the client and API from one origin, so it does not need permissive cross-origin rules. For a different local port or a separate client host, allow only the exact HTTPS client origin.
 
 ### Owner access
 
@@ -184,28 +192,37 @@ New accounts do not automatically receive the `Owner` role. An administrator mus
 
 ## CI
 
-`.github/workflows/main.yml` restores and builds the complete solution on pull requests to `main` or `master`, and supports manual runs. It installs both .NET SDK versions required by the API and client. The Azure release workflow is manual-only and will not run on a push; Azure deployment is intentionally paused for this capstone step.
+`.github/workflows/main.yml` runs restore, dependency audit, Release build, tests, and a Docker build for pushes and pull requests to `main` and `develop`. `.github/workflows/deploy-gcp.yml` waits for a successful CI push, then can deploy the exact validated commit to Cloud Run. Development and Production deployments require separate GitHub environment variables, GitHub OIDC/Google Workload Identity Federation, and the `GCP_DEV_DEPLOY_ENABLED` or `GCP_PROD_DEPLOY_ENABLED` repository gate. Keep both gates unset or `false` until each environment is configured and reviewed. The deployer uses the custom no-delete Cloud Run role defined in `localeats-gcp-deployer-role.yaml`; do not replace it with Cloud Run Admin or Developer.
 
-## Step 11 validation checklist
+## Google Cloud Development deployment
 
-Use this list for the local walkthrough:
+- Live Development URL: <https://localeats-dev-449901250411.europe-central2.run.app>.
+- The service, PostgreSQL database, logo bucket, KMS key, Secret Manager secrets, migration job, cleanup job, and Cloud Scheduler are documented in [GOOGLE_CLOUD_DEPLOYMENT_GUIDE.md](GOOGLE_CLOUD_DEPLOYMENT_GUIDE.md).
+- Cloud Run changes have been deployed manually through Cloud Shell so far. The gated GitHub deployment workflow is prepared, but Workload Identity Federation and GitHub environment variables still need configuration before automatic deployment can run.
+- Production is not provisioned. Keep its gate disabled until it has a separate project, database, bucket, KMS key, identities, secrets, backups, budget alerts, monitoring, and GitHub approval protection.
+
+## Manual validation record
+
+Use this checklist for local and deployed manual verification:
 
 - [ ] Open the public restaurant list and verify search, sorting, pagination, details, and menu browsing.
-- [ ] Register, sign in, refresh an access token, and sign out.
-- [ ] Confirm a non-owner cannot create or edit another user's restaurant or dishes.
-- [ ] As an Owner, create a restaurant, update it, upload a logo, create a dish, and edit the dish.
+- [x] Register, sign in, refresh the session, and sign out.
+- [x] Confirm a different account cannot update another owner's restaurant; the cross-account `PATCH` returned `403 Forbidden`.
+- [x] As an Owner, create/edit a restaurant, upload and display a logo, and create/edit a dish.
 - [ ] Confirm the owner workspace lists only that owner's restaurants.
 - [ ] Confirm public catalog results refresh after a write rather than showing cached stale values.
 - [ ] Try invalid lengths, malformed email/phone/postal code, markup characters, control characters, and out-of-range numeric values in forms; confirm they are rejected or normalized before submission.
 - [ ] Confirm Identity endpoints return HTTP 429 after the configured burst and inspect API security headers plus client CSP in browser developer tools.
 - [ ] Check desktop and phone layouts, keyboard focus, labels, loading/empty/error messages, and image alternatives.
-- [ ] Run `dotnet test .\Restaurants.API.sln --no-restore` and record the actual result.
+- [x] Run `dotnet test .\Restaurants.API.sln --no-restore`; the user reported 34 tests passing after the security updates.
 
 ### Validation status
 
-- The user previously confirmed the baseline solution built and its tests passed. The security changes in this revision still need a full local build, test run, and browser login/CSRF walkthrough.
-- A full build in the assistant environment could not complete because the .NET WebAssembly `ComputeWasmBuildAssets` task host failed to start (`MSB4216`). No passing build or test result is claimed for this revision.
-- Google Cloud deployment is not part of this security code change.
+- The user reported a Release solution build and 34 passing automated tests after the security changes.
+- GitHub Actions run 47 passed for `main` commit `01a017576f9623dd7afcd636bedd8e34048768dc`.
+- The user completed the Development browser walkthrough: sign-up/sign-in/session/logout, owner create/edit, logo upload/display, dish create/edit, cross-owner `403`, XSS-shaped input validation, SQL-shaped search, unsupported/oversized upload rejection, and signed-out owner-route handling.
+- `/health`, the homepage, antiforgery token endpoint, and the Blazor PDB asset returned expected successful responses during Cloud Run checks. The user confirmed the duplicate navigation and normal unauthenticated error banner are fixed.
+- The exact latest Cloud Run revision name was not recorded. Data Protection/database/logo persistence across a new revision, actual expiry cleanup after 24 hours, client-IP rate-limit behavior through Cloud Run, and Cloud SQL cost/credit review remain operational checks.
 
 ## Security controls implemented
 
@@ -231,7 +248,15 @@ Start the API once so the account is created, then remove both settings with `do
 
 ## Remaining security work
 
-1. Verify cookie login/logout and antiforgery behavior in the browser, including cross-origin local development and same-origin Cloud Run hosting.
-2. Verify the rate limiter's client IP behavior on Cloud Run. Do not trust arbitrary forwarded headers; use a verified proxy setup or edge rate limiting such as Cloud Armor where appropriate.
-3. Consider server-side image decode/re-encode and malware scanning before accepting public uploads from real users.
-4. Define an operational Admin recovery process and tamper-resistant audit retention if real user accounts are introduced.
+1. Verify the rate limiter's client IP behavior on Cloud Run. Do not trust arbitrary forwarded headers; use a verified proxy setup or edge rate limiting such as Cloud Armor where appropriate.
+2. Consider server-side image decode/re-encode and malware scanning before accepting public uploads from real users.
+3. Define an operational Admin recovery process and tamper-resistant audit retention if real user accounts are introduced.
+
+## NEXT TO DEVELOP
+
+1. **Automate Development deploys.** Configure GitHub Workload Identity Federation and the `Development` environment; keep `GCP_DEV_DEPLOY_ENABLED` off until IAM, branch restrictions, variables, migration job, and rollback behavior are reviewed. Then confirm a successful `develop` push deploys and passes health checks.
+2. **Complete cloud operations verification.** Verify database records, logos, and Data Protection keys across a new Cloud Run revision; observe cleanup after the 24-hour retention period; confirm Cloud Run forwarded-IP behavior for rate limits; review Cloud SQL costs and budget alerts.
+3. **Prepare Production separately.** Use a separate Google Cloud project and isolated database, logo bucket, KMS key, runtime/deployer identities, secrets, backups, monitoring, and budget alerts. Add required GitHub Production approval and test restore/rollback before enabling the gate.
+4. **Scale caching deliberately.** The output cache is process-local. Before increasing Cloud Run above one instance, design distributed caching and cross-instance invalidation or retain the current single-instance cap.
+5. **Strengthen public-upload handling.** Consider decoding and re-encoding logos and malware scanning before accepting uploads from real public users.
+6. **Complete account operations.** Add email confirmation/recovery, a reviewed Admin recovery process, and durable audit-log retention before introducing real customer accounts.

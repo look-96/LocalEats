@@ -1,0 +1,259 @@
+name: LocalEats Google Cloud CD
+
+on:
+  workflow_run:
+    workflows: [LocalEats CI]
+    branches: [develop, main]
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-development:
+    name: Deploy Development to Cloud Run
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'develop' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      vars.GCP_DEV_DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment:
+      name: Development
+    concurrency:
+      group: localeats-gcp-development
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+      GCP_REGION: ${{ vars.GCP_REGION }}
+      GCP_ARTIFACT_REPOSITORY: ${{ vars.GCP_ARTIFACT_REPOSITORY }}
+      GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+      GCP_DEPLOY_SERVICE_ACCOUNT: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+      GCP_RUNTIME_SERVICE_ACCOUNT: ${{ vars.GCP_RUNTIME_SERVICE_ACCOUNT }}
+      GCP_CLOUD_SQL_INSTANCE: ${{ vars.GCP_CLOUD_SQL_INSTANCE }}
+      GCP_DATABASE_SECRET: ${{ vars.GCP_DATABASE_SECRET }}
+      GCP_ADMIN_CREDENTIAL_HASH_SECRET: ${{ vars.GCP_ADMIN_CREDENTIAL_HASH_SECRET }}
+      GCP_GCS_BUCKET: ${{ vars.GCP_GCS_BUCKET }}
+      GCP_KMS_KEY_NAME: ${{ vars.GCP_KMS_KEY_NAME }}
+      GCP_RUN_SERVICE: ${{ vars.GCP_RUN_SERVICE }}
+      GCP_MIGRATION_JOB: ${{ vars.GCP_MIGRATION_JOB }}
+      GCP_CLEANUP_JOB: ${{ vars.GCP_CLEANUP_JOB }}
+      SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      - name: Check out the commit validated by CI
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+
+      - name: Authenticate to Google Cloud with GitHub OIDC
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - name: Install Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+
+      - name: Validate Development deployment settings
+        shell: bash
+        run: |
+          for name in GCP_PROJECT_ID GCP_REGION GCP_ARTIFACT_REPOSITORY GCP_WORKLOAD_IDENTITY_PROVIDER GCP_DEPLOY_SERVICE_ACCOUNT GCP_RUNTIME_SERVICE_ACCOUNT GCP_CLOUD_SQL_INSTANCE GCP_DATABASE_SECRET GCP_ADMIN_CREDENTIAL_HASH_SECRET GCP_GCS_BUCKET GCP_KMS_KEY_NAME GCP_RUN_SERVICE GCP_MIGRATION_JOB GCP_CLEANUP_JOB; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "Missing required Development environment variable: $name" >&2
+              exit 1
+            fi
+          done
+
+      - name: Build and push commit-tagged image
+        id: image
+        shell: bash
+        run: |
+          gcloud auth configure-docker "${GCP_REGION}-docker.pkg.dev" --quiet
+          image="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${GCP_ARTIFACT_REPOSITORY}/localeats:${SOURCE_SHA}"
+          docker build --tag "$image" .
+          docker push "$image"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+
+      - name: Apply PostgreSQL migrations
+        env:
+          IMAGE: ${{ steps.image.outputs.image }}
+        run: |
+          gcloud run jobs update "$GCP_MIGRATION_JOB" \
+            --image "$IMAGE" \
+            --region "$GCP_REGION" \
+            --project "$GCP_PROJECT_ID"
+          gcloud run jobs execute "$GCP_MIGRATION_JOB" \
+            --region "$GCP_REGION" \
+            --project "$GCP_PROJECT_ID" \
+            --wait
+
+      - name: Update scheduled cleanup job image
+        env:
+          IMAGE: ${{ steps.image.outputs.image }}
+        run: |
+          gcloud run jobs update "$GCP_CLEANUP_JOB" \
+            --image "$IMAGE" \
+            --region "$GCP_REGION" \
+            --project "$GCP_PROJECT_ID"
+
+      - name: Deploy Cloud Run Development service
+        env:
+          IMAGE: ${{ steps.image.outputs.image }}
+        run: |
+          gcloud run deploy "$GCP_RUN_SERVICE" \
+            --image "$IMAGE" \
+            --region "$GCP_REGION" \
+            --project "$GCP_PROJECT_ID" \
+            --platform managed \
+            --port 8080 \
+            --allow-unauthenticated \
+            --service-account "$GCP_RUNTIME_SERVICE_ACCOUNT" \
+            --add-cloudsql-instances "$GCP_CLOUD_SQL_INSTANCE" \
+            --min 0 \
+            --max 1 \
+            --update-env-vars "ASPNETCORE_ENVIRONMENT=Production,Database__Provider=PostgreSql,Storage__LogoProvider=GoogleCloudStorage,Storage__GoogleCloud__Bucket=${GCP_GCS_BUCKET},Storage__GoogleCloud__LogoPrefix=restaurant-logos,Storage__GoogleCloud__SignedUrlLifetimeMinutes=30,DataProtection__Provider=GoogleCloudKms,DataProtection__ObjectPrefix=data-protection/localeats,DataProtection__KmsKeyName=${GCP_KMS_KEY_NAME}" \
+            --update-secrets "ConnectionStrings__RestaurantsDb=${GCP_DATABASE_SECRET}:latest,Admin__DestructiveCommandCredentialHash=${GCP_ADMIN_CREDENTIAL_HASH_SECRET}:latest"
+
+      - name: Check Development health
+        shell: bash
+        run: |
+          service_url="$(gcloud run services describe "$GCP_RUN_SERVICE" \
+            --region "$GCP_REGION" \
+            --project "$GCP_PROJECT_ID" \
+            --format='value(status.url)')"
+          test -n "$service_url"
+          curl --fail --silent --show-error --retry 12 --retry-delay 5 --retry-connrefused "${service_url%/}/health"
+          curl --fail --silent --show-error --retry 12 --retry-delay 5 --retry-connrefused "$service_url/"
+
+  deploy-production:
+    name: Deploy Production to Cloud Run
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      vars.GCP_PROD_DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment:
+      name: Production
+    concurrency:
+      group: localeats-gcp-production
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+      GCP_REGION: ${{ vars.GCP_REGION }}
+      GCP_ARTIFACT_REPOSITORY: ${{ vars.GCP_ARTIFACT_REPOSITORY }}
+      GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+      GCP_DEPLOY_SERVICE_ACCOUNT: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+      GCP_RUNTIME_SERVICE_ACCOUNT: ${{ vars.GCP_RUNTIME_SERVICE_ACCOUNT }}
+      GCP_CLOUD_SQL_INSTANCE: ${{ vars.GCP_CLOUD_SQL_INSTANCE }}
+      GCP_DATABASE_SECRET: ${{ vars.GCP_DATABASE_SECRET }}
+      GCP_ADMIN_CREDENTIAL_HASH_SECRET: ${{ vars.GCP_ADMIN_CREDENTIAL_HASH_SECRET }}
+      GCP_GCS_BUCKET: ${{ vars.GCP_GCS_BUCKET }}
+      GCP_KMS_KEY_NAME: ${{ vars.GCP_KMS_KEY_NAME }}
+      GCP_RUN_SERVICE: ${{ vars.GCP_RUN_SERVICE }}
+      GCP_MIGRATION_JOB: ${{ vars.GCP_MIGRATION_JOB }}
+      GCP_CLEANUP_JOB: ${{ vars.GCP_CLEANUP_JOB }}
+      SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      - name: Check out the commit validated by CI
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+
+      - name: Authenticate to Google Cloud with GitHub OIDC
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - name: Install Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+
+      - name: Validate Production deployment settings
+        shell: bash
+        run: |
+          for name in GCP_PROJECT_ID GCP_REGION GCP_ARTIFACT_REPOSITORY GCP_WORKLOAD_IDENTITY_PROVIDER GCP_DEPLOY_SERVICE_ACCOUNT GCP_RUNTIME_SERVICE_ACCOUNT GCP_CLOUD_SQL_INSTANCE GCP_DATABASE_SECRET GCP_ADMIN_CREDENTIAL_HASH_SECRET GCP_GCS_BUCKET GCP_KMS_KEY_NAME GCP_RUN_SERVICE GCP_MIGRATION_JOB GCP_CLEANUP_JOB; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "Missing required Production environment variable: $name" >&2
+              exit 1
+            fi
+          done
+
+      - name: Build and push commit-tagged image
+        id: image
+        shell: bash
+        run: |
+          gcloud auth configure-docker "${GCP_REGION}-docker.pkg.dev" --quiet
+          image="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${GCP_ARTIFACT_REPOSITORY}/localeats:${SOURCE_SHA}"
+          docker build --tag "$image" .
+          docker push "$image"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+
+      - name: Apply PostgreSQL migrations
+        env:
+          IMAGE: ${{ steps.image.outputs.image }}
+        run: |
+          gcloud run jobs update "$GCP_MIGRATION_JOB" \
+            --image "$IMAGE" \
+            --region "$GCP_REGION" \
+            --project "$GCP_PROJECT_ID"
+          gcloud run jobs execute "$GCP_MIGRATION_JOB" \
+            --region "$GCP_REGION" \
+            --project "$GCP_PROJECT_ID" \
+            --wait
+
+      - name: Update scheduled cleanup job image
+        env:
+          IMAGE: ${{ steps.image.outputs.image }}
+        run: |
+          gcloud run jobs update "$GCP_CLEANUP_JOB" \
+            --image "$IMAGE" \
+            --region "$GCP_REGION" \
+            --project "$GCP_PROJECT_ID"
+
+      - name: Deploy Cloud Run Production service
+        env:
+          IMAGE: ${{ steps.image.outputs.image }}
+        run: |
+          gcloud run deploy "$GCP_RUN_SERVICE" \
+            --image "$IMAGE" \
+            --region "$GCP_REGION" \
+            --project "$GCP_PROJECT_ID" \
+            --platform managed \
+            --port 8080 \
+            --allow-unauthenticated \
+            --service-account "$GCP_RUNTIME_SERVICE_ACCOUNT" \
+            --add-cloudsql-instances "$GCP_CLOUD_SQL_INSTANCE" \
+            --min 0 \
+            --max 1 \
+            --update-env-vars "ASPNETCORE_ENVIRONMENT=Production,Database__Provider=PostgreSql,Storage__LogoProvider=GoogleCloudStorage,Storage__GoogleCloud__Bucket=${GCP_GCS_BUCKET},Storage__GoogleCloud__LogoPrefix=restaurant-logos,Storage__GoogleCloud__SignedUrlLifetimeMinutes=30,DataProtection__Provider=GoogleCloudKms,DataProtection__ObjectPrefix=data-protection/localeats,DataProtection__KmsKeyName=${GCP_KMS_KEY_NAME}" \
+            --update-secrets "ConnectionStrings__RestaurantsDb=${GCP_DATABASE_SECRET}:latest,Admin__DestructiveCommandCredentialHash=${GCP_ADMIN_CREDENTIAL_HASH_SECRET}:latest"
+
+      - name: Check Production health
+        shell: bash
+        run: |
+          service_url="$(gcloud run services describe "$GCP_RUN_SERVICE" \
+            --region "$GCP_REGION" \
+            --project "$GCP_PROJECT_ID" \
+            --format='value(status.url)')"
+          test -n "$service_url"
+          curl --fail --silent --show-error --retry 12 --retry-delay 5 --retry-connrefused "${service_url%/}/health"
+          curl --fail --silent --show-error --retry 12 --retry-delay 5 --retry-connrefused "$service_url/"
