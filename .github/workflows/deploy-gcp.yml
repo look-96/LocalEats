@@ -37,7 +37,6 @@ jobs:
       GCP_KMS_KEY_NAME: ${{ vars.GCP_KMS_KEY_NAME }}
       GCP_RUN_SERVICE: ${{ vars.GCP_RUN_SERVICE }}
       GCP_MIGRATION_JOB: ${{ vars.GCP_MIGRATION_JOB }}
-      GCP_CLEANUP_JOB: ${{ vars.GCP_CLEANUP_JOB }}
       SOURCE_SHA: ${{ github.sha }}
     steps:
       - name: Check out the commit validated by CI
@@ -61,7 +60,7 @@ jobs:
       - name: Validate Development deployment settings
         shell: bash
         run: |
-          for name in GCP_PROJECT_ID GCP_REGION GCP_ARTIFACT_REPOSITORY GCP_WORKLOAD_IDENTITY_PROVIDER GCP_DEPLOY_SERVICE_ACCOUNT GCP_RUNTIME_SERVICE_ACCOUNT GCP_CLOUD_SQL_INSTANCE GCP_DATABASE_SECRET GCP_ADMIN_CREDENTIAL_HASH_SECRET GCP_GCS_BUCKET GCP_KMS_KEY_NAME GCP_RUN_SERVICE GCP_MIGRATION_JOB GCP_CLEANUP_JOB; do
+          for name in GCP_PROJECT_ID GCP_REGION GCP_ARTIFACT_REPOSITORY GCP_WORKLOAD_IDENTITY_PROVIDER GCP_DEPLOY_SERVICE_ACCOUNT GCP_RUNTIME_SERVICE_ACCOUNT GCP_CLOUD_SQL_INSTANCE GCP_DATABASE_SECRET GCP_ADMIN_CREDENTIAL_HASH_SECRET GCP_GCS_BUCKET GCP_KMS_KEY_NAME GCP_RUN_SERVICE GCP_MIGRATION_JOB; do
             if [[ -z "${!name:-}" ]]; then
               echo "Missing required Development environment variable: $name" >&2
               exit 1
@@ -90,15 +89,6 @@ jobs:
             --region "$GCP_REGION" \
             --project "$GCP_PROJECT_ID" \
             --wait
-
-      - name: Update scheduled cleanup job image
-        env:
-          IMAGE: ${{ steps.image.outputs.image }}
-        run: |
-          gcloud run jobs update "$GCP_CLEANUP_JOB" \
-            --image "$IMAGE" \
-            --region "$GCP_REGION" \
-            --project "$GCP_PROJECT_ID"
 
       - name: Deploy Cloud Run Development service
         env:
@@ -159,7 +149,6 @@ jobs:
       GCP_KMS_KEY_NAME: ${{ vars.GCP_KMS_KEY_NAME }}
       GCP_RUN_SERVICE: ${{ vars.GCP_RUN_SERVICE }}
       GCP_MIGRATION_JOB: ${{ vars.GCP_MIGRATION_JOB }}
-      GCP_CLEANUP_JOB: ${{ vars.GCP_CLEANUP_JOB }}
       SOURCE_SHA: ${{ github.sha }}
     steps:
       - name: Check out the commit validated by CI
@@ -183,7 +172,7 @@ jobs:
       - name: Validate Production deployment settings
         shell: bash
         run: |
-          for name in GCP_PROJECT_ID GCP_REGION GCP_ARTIFACT_REPOSITORY GCP_WORKLOAD_IDENTITY_PROVIDER GCP_DEPLOY_SERVICE_ACCOUNT GCP_RUNTIME_SERVICE_ACCOUNT GCP_CLOUD_SQL_INSTANCE GCP_DATABASE_SECRET GCP_ADMIN_CREDENTIAL_HASH_SECRET GCP_GCS_BUCKET GCP_KMS_KEY_NAME GCP_RUN_SERVICE GCP_MIGRATION_JOB GCP_CLEANUP_JOB; do
+          for name in GCP_PROJECT_ID GCP_REGION GCP_ARTIFACT_REPOSITORY GCP_WORKLOAD_IDENTITY_PROVIDER GCP_DEPLOY_SERVICE_ACCOUNT GCP_RUNTIME_SERVICE_ACCOUNT GCP_CLOUD_SQL_INSTANCE GCP_DATABASE_SECRET GCP_ADMIN_CREDENTIAL_HASH_SECRET GCP_GCS_BUCKET GCP_KMS_KEY_NAME GCP_RUN_SERVICE GCP_MIGRATION_JOB; do
             if [[ -z "${!name:-}" ]]; then
               echo "Missing required Production environment variable: $name" >&2
               exit 1
@@ -212,15 +201,6 @@ jobs:
             --region "$GCP_REGION" \
             --project "$GCP_PROJECT_ID" \
             --wait
-
-      - name: Update scheduled cleanup job image
-        env:
-          IMAGE: ${{ steps.image.outputs.image }}
-        run: |
-          gcloud run jobs update "$GCP_CLEANUP_JOB" \
-            --image "$IMAGE" \
-            --region "$GCP_REGION" \
-            --project "$GCP_PROJECT_ID"
 
       - name: Deploy Cloud Run Production service
         env:

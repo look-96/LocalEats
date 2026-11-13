@@ -55,10 +55,6 @@ flowchart LR
     DP --> KMS[Cloud Storage key ring encrypted with Cloud KMS]
     API --> PG[(Cloud SQL PostgreSQL on Cloud Run)]
 
-    Scheduler[Cloud Scheduler<br/>every 15 minutes] --> Cleanup[Cloud Run cleanup job]
-    Cleanup --> PG
-    Cleanup --> Blob
-
     API --> Cache[In-memory output cache]
     API --> Middleware[Error handling, request timing, and antiforgery validation]
 
@@ -197,8 +193,8 @@ New accounts do not automatically receive the `Owner` role. An administrator mus
 ## Google Cloud Development deployment
 
 - Live Development URL: <https://localeats-dev-449901250411.europe-central2.run.app>.
-- The service, PostgreSQL database, logo bucket, KMS key, Secret Manager secrets, migration job, cleanup job, and Cloud Scheduler are documented in [GOOGLE_CLOUD_DEPLOYMENT_GUIDE.md](GOOGLE_CLOUD_DEPLOYMENT_GUIDE.md).
-- Cloud Run changes have been deployed manually through Cloud Shell so far. The gated GitHub deployment workflow is prepared, but Workload Identity Federation and GitHub environment variables still need configuration before automatic deployment can run.
+- The Development service, PostgreSQL database, logo bucket, KMS key, Secret Manager secrets, and migration job are documented in [GOOGLE_CLOUD_DEPLOYMENT_GUIDE.md](GOOGLE_CLOUD_DEPLOYMENT_GUIDE.md).
+- GitHub Workload Identity Federation and Development variables are configured. The first gated deployment exposed an unsupported cleanup-job step; that step is being removed before retrying the deployment.
 - Production is not provisioned. Keep its gate disabled until it has a separate project, database, bucket, KMS key, identities, secrets, backups, budget alerts, monitoring, and GitHub approval protection.
 
 ## Manual validation record
@@ -222,7 +218,7 @@ Use this checklist for local and deployed manual verification:
 - GitHub Actions run 47 passed for `main` commit `01a017576f9623dd7afcd636bedd8e34048768dc`.
 - The user completed the Development browser walkthrough: sign-up/sign-in/session/logout, owner create/edit, logo upload/display, dish create/edit, cross-owner `403`, XSS-shaped input validation, SQL-shaped search, unsupported/oversized upload rejection, and signed-out owner-route handling.
 - `/health`, the homepage, antiforgery token endpoint, and the Blazor PDB asset returned expected successful responses during Cloud Run checks. The user confirmed the duplicate navigation and normal unauthenticated error banner are fixed.
-- The exact latest Cloud Run revision name was not recorded. Data Protection/database/logo persistence across a new revision, actual expiry cleanup after 24 hours, client-IP rate-limit behavior through Cloud Run, and Cloud SQL cost/credit review remain operational checks.
+- The exact latest Cloud Run revision name was not recorded. Data Protection/database/logo persistence across a new revision, client-IP rate-limit behavior through Cloud Run, and Cloud SQL cost/credit review remain operational checks.
 
 ## Security controls implemented
 
@@ -254,8 +250,8 @@ Start the API once so the account is created, then remove both settings with `do
 
 ## NEXT TO DEVELOP
 
-1. **Automate Development deploys.** Configure GitHub Workload Identity Federation and the `Development` environment; keep `GCP_DEV_DEPLOY_ENABLED` off until IAM, branch restrictions, variables, migration job, and rollback behavior are reviewed. Then confirm a successful `develop` push deploys and passes health checks.
-2. **Complete cloud operations verification.** Verify database records, logos, and Data Protection keys across a new Cloud Run revision; observe cleanup after the 24-hour retention period; confirm Cloud Run forwarded-IP behavior for rate limits; review Cloud SQL costs and budget alerts.
+1. **Finish Development automation.** Remove the unsupported cleanup-job step, then confirm a successful `develop` push deploys and passes health checks. The Development gate is enabled and deployment access is restricted to the `develop` branch.
+2. **Complete cloud operations verification.** Verify database records, logos, and Data Protection keys across a new Cloud Run revision; confirm Cloud Run forwarded-IP behavior for rate limits; review Cloud SQL costs and budget alerts.
 3. **Prepare Production separately.** Use a separate Google Cloud project and isolated database, logo bucket, KMS key, runtime/deployer identities, secrets, backups, monitoring, and budget alerts. Add required GitHub Production approval and test restore/rollback before enabling the gate.
 4. **Scale caching deliberately.** The output cache is process-local. Before increasing Cloud Run above one instance, design distributed caching and cross-instance invalidation or retain the current single-instance cap.
 5. **Strengthen public-upload handling.** Consider decoding and re-encoding logos and malware scanning before accepting uploads from real public users.
